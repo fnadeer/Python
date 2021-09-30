@@ -1,6 +1,6 @@
 catnames = []
 while True:
-    print("Enter the name of the cat" + str(len(catnames) + 1) +" (Or enter nothing to stop) :")
+    print("Enter the name of the cat you like" + str(len(catnames) + 1) +" (Or enter nothing to stop) :")
     name = input()
     if name == '':
         break

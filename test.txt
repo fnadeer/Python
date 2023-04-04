@@ -81,6 +81,39 @@
 20.86.25.79	AZURE	AZU01.evabssi_EU_mco	4B97bCx{2#(Zsb
 10.216.241.4	BGI_ETHIOPIE	BGI01_EVABSSI_EU_MCO	d32cWN8{i9.+Hc
 
-except Exception as e:
+ try:
+        # Connect to the FortiGate device
+        net_connect = ConnectHandler(**device)
+
+        # Enter into configuration mode
+        net_connect.config_mode()
+
+        # Save the full configuration to a file
+        print('SSH Connection to ' + row['Hostname'] + ' is successful')
+        output = net_connect.send_command('show full-configuration', read_timeout=60)
+        filename = row['Hostname'] + '_' + date + '_config.conf'
+        with open(filename, 'w') as file:
+            file.write(output)
+
+        # Backup status
+        print('Backup of ' + row['Hostname'] + ' is successful')
+
+        # Disconnect from the device
+        net_connect.exit_config_mode()
+        net_connect.disconnect()
+
+        # Define the cell to write the backup status to
+        status_cell = 'C' + str(index + 2)  # Assumes device details start on row 2
+
+        # Write the backup status to the Excel file and upload to SFTP server
+        try:
+            sftp_client.put(filename, sftp_directory + '/' + filename)
+            devices_df.at[index, 'Backup Status'] = 'Success'
+            print('Upload of ' + filename + ' to SFTP server ' + sftp_server + ' is successful')
+        except Exception as e:
+            devices_df.at[index, 'Backup Status'] = 'Failed: ' + str(e)
+            print('Upload of ' + filename + ' to SFTP server ' + sftp_server + ' failed with error: ' + str(e))
+
+    except Exception as e:
         print('SSH Connection to ' + row['Hostname'] + ' failed with error: ' + str(e))
         continue

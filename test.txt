@@ -80,3 +80,7 @@
 10.229.241.136	SOBEBRA_COTONOU	SBB01_EVABSSI_EU_MCO	Fdf04154!ffdA
 20.86.25.79	AZURE	AZU01.evabssi_EU_mco	4B97bCx{2#(Zsb
 10.216.241.4	BGI_ETHIOPIE	BGI01_EVABSSI_EU_MCO	d32cWN8{i9.+Hc
+
+except Exception as e:
+        print('SSH Connection to ' + row['Hostname'] + ' failed with error: ' + str(e))
+        continue

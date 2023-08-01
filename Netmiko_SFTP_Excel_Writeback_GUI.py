@@ -1,127 +1,81 @@
-from tkinter import *
-from tkinter import filedialog
-import pandas as pd
-import datetime
 import paramiko
-from netmiko import ConnectHandler
+import time
+import datetime
+import pandas as pd
 
-# Define the main function to run the script
-def run_script():
-    # Load the Excel file with the FortiGate device details and credentials
-    devices_df = pd.read_excel(file_path.get())
+# Load the input data from an Excel file
+data = pd.read_excel('fortigate_devices_Production3.xlsx')
 
-    # Define the SFTP server details
-    sftp_server = sftp_server_entry.get()
-    sftp_port = sftp_port_entry.get()
-    sftp_username = sftp_username_entry.get()
-    sftp_password = sftp_password_entry.get()
-    sftp_directory = sftp_directory_entry.get()
+# Create an empty list to store the hostnames of firewalls where the SSH connection fails
+failed_connections = []
+failed_sftp = []
 
-    # Create an SFTP transport
-    transport = paramiko.Transport((sftp_server, int(sftp_port)))
-    transport.connect(username=sftp_username, password=sftp_password)
+for index, row in data.iterrows():
+    # Extract the IP address, username, and password for the FortiGate firewall from the current row of data
+    ip_address = row['IP Address']
+    username = row['Username']
+    password = row['Password']
+    hostname = row['Hostname']
 
-    # Create an SFTP client
-    sftp_client = paramiko.SFTPClient.from_transport(transport)
+    # Get the current date and time to use in the backup config file name
+    now = datetime.datetime.now()
+    backup_file_name = f"{hostname}_{now.strftime('%Y-%m-%d_%H-%M-%S')}.conf"
 
-    # Get the current date
-    date = datetime.datetime.now().strftime('%Y-%m-%d')
+    # Set the command to execute on the firewall with the new backup config file name
+    command = f'execute backup config sftp {backup_file_name} 10.246.208.167 staccmonforti23101.adminforti 1lLDqxFIrvkFMEojJ8C81wm3vcglLCR0'
 
-    # Loop through each FortiGate device and save the full configuration to a file
-    for index, row in devices_df.iterrows():
-        # Define the FortiGate device details
-        device = {
-            'device_type': 'fortinet',
-            'ip': row['IP Address'],
-            'username': row['Username'],
-            'password': row['Password']
-        }
+    # Create a new SSH client and set the policy to use the default system policy
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-        # Connect to the FortiGate device
-        net_connect = ConnectHandler(**device)
+    try:
+        # Connect to the FortiGate firewall using SSH
+        ssh.connect(ip_address, username=username, password=password)
+        print('SSH Connection to ' + row['Hostname'] + ' Successful')
 
-        # Enter into configuration mode
-        net_connect.config_mode()
+        # Start an interactive shell session
+        channel = ssh.invoke_shell()
 
-        # Save the full configuration to a file
-        output = net_connect.send_command('show full-configuration', read_timeout=60)
-        filename = row['Hostname'] + '_' + date + '_config.conf'
-        with open(filename, 'w') as file:
-            file.write(output)
+        # Enter into the config global mode
+        channel.send('config global\n')
 
-        # Backup status
-        print('Backup of ' + row['Hostname'] + ' is successful')
+        # Wait for the prompt to change to "(global)" indicating that we are in the config global mode
+        while not channel.recv_ready():
+            pass       
+        output = channel.recv(1024).decode('utf-8')
+        print(output)
 
-        # Disconnect from the device
-        net_connect.exit_config_mode()
-        net_connect.disconnect()
+        # Execute the command and store the output
+        channel.send(command + '\n')
+        time.sleep(20)
+        while not channel.recv_ready():
+            pass
+        output = channel.recv(1024).decode('utf-8')
+        print(output)
+        # Check if the backup config file was successfully sent to the SFTP server
+        if 'failed' in output:
+            failed_sftp.append(hostname)
 
-        # Define the cell to write the backup status to
-        status_cell = 'C' + str(index + 2)  # Assumes device details start on row 2
+    except Exception as e:
+        print(f"Failed to connect to {hostname} with IP {ip_address}: {str(e)}")
+        failed_connections.append(hostname)
 
-        # Write the backup status to the Excel file
-        try:
-            sftp_client.put(filename, sftp_directory + '/' + filename)
-            devices_df.at[index, 'Backup Status'] = 'Success'
-            print('Upload of ' + filename + ' to SFTP server ' + sftp_server + ' is successful')
-        except Exception as e:
-            devices_df.at[index, 'Backup Status'] = 'Failed: ' + str(e)
-            print('Upload of ' + filename + ' to SFTP server ' + sftp_server + ' failed with error: ' + str(e))
-            file = ''
-        # Save the updated Excel file
-        devices_df.to_excel(file_path.get(), index=False)
+    finally:
+        # Close the SSH connection
+        ssh.close()
 
-    # Close the SFTP client and transport
-    sftp_client.close()
-    transport.close()
+# Print the list of hostnames of firewalls where the SSH connection failed
+if failed_connections:
+    print(f"\nFailed to connect to the following {len(failed_connections)} firewall(s):")
+    for hostname in failed_connections:
+        print(hostname)
 
-# Define the function to browse for the Excel file
-def browse_file():
-    file_path.set(filedialog.askopenfilename())
+else:
+    print("\nAll SSH connections successful.")
 
-# Create the main window
-root = Tk()
-root.title("FortiGate Backup Tool")
-
-# Create the frame for the input fields
-input_frame = Frame(root)
-input_frame.pack()
-
-# Add the Excel file input field and browse button
-file_path = StringVar()
-file_label = Label(input_frame, text="Excel File:")
-file_entry = Entry(input_frame, textvariable=file_path)
-file_entry.pack(side=LEFT, padx=5, pady=5)
-
-browse_button = Button(input_frame, text="Browse", command=browse_file)
-browse_button.pack(side=LEFT, padx=5, pady=5)
-
-sftp_server_label = Label(input_frame, text="SFTP Server:")
-sftp_server_entry = Entry(input_frame)
-sftp_server_label.pack(side=LEFT, padx=5, pady=5)
-sftp_server_entry.pack(side=LEFT, padx=5, pady=5)
-
-sftp_port_label = Label(input_frame, text="SFTP Port:")
-sftp_port_entry = Entry(input_frame)
-sftp_port_label.pack(side=LEFT, padx=5, pady=5)
-sftp_port_entry.pack(side=LEFT, padx=5, pady=5)
-
-sftp_username_label = Label(input_frame, text="SFTP Username:")
-sftp_username_entry = Entry(input_frame)
-sftp_username_label.pack(side=LEFT, padx=5, pady=5)
-sftp_username_entry.pack(side=LEFT, padx=5, pady=5)
-
-sftp_password_label = Label(input_frame, text="SFTP Password:")
-sftp_password_entry = Entry(input_frame, show="*")
-sftp_password_label.pack(side=LEFT, padx=5, pady=5)
-sftp_password_entry.pack(side=LEFT, padx=5, pady=5)
-
-sftp_directory_label = Label(input_frame, text="SFTP Directory:")
-sftp_directory_entry = Entry(input_frame)
-sftp_directory_label.pack(side=LEFT, padx=5, pady=5)
-sftp_directory_entry.pack(side=LEFT, padx=5, pady=5)
-
-run_button = Button(root, text="Run Backup", command=run_script)
-run_button.pack(pady=10)
-
-root.mainloop()
+if failed_sftp:
+    print(f"\nFailed to send backup config file to the SFTP server for {len(failed_sftp)} firewall(s):")
+    for hostname in failed_sftp:
+        print(hostname)
+else:
+    print("\nAll backup config files were sent to the SFTP server successfully.")

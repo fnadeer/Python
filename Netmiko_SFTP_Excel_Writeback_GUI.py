@@ -22,7 +22,7 @@ for index, row in data.iterrows():
     backup_file_name = f"{hostname}_{now.strftime('%Y-%m-%d_%H-%M-%S')}.conf"
 
     # Set the command to execute on the firewall with the new backup config file name
-    command = f'execute backup config sftp {backup_file_name} 10.246.208.167 staccmonforti23101.adminforti 1lLDqxFIrvkFMEojJ8C81wm3vcglLCR0'
+    command = f'execute backup config sftp {backup_file_name} 10.246.208.167  <put your username and password of your sftp server here>'
 
     # Create a new SSH client and set the policy to use the default system policy
     ssh = paramiko.SSHClient()
